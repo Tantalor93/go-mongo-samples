@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	log "github.com/sirupsen/logrus"
-	"github.com/tantalor93/go-mongo-samples/domain"
 	"github.com/tantalor93/go-mongo-samples/seed"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -35,22 +34,31 @@ func main() {
 
 	seed.SeedDb(col, ctx)
 
-	pipeline := []bson.M{{"$match": bson.M{"pages": bson.M{"$gt": 200}}}}
+	pipeline := []bson.M{
+		{"$project": bson.M{"pages": 1, "language": 1}},
+		{"$match": bson.M{"pages": bson.M{"$gt": 200}}},
+		{"$group": bson.M{"_id": "$language", "count": bson.M{"$sum": 1}}},
+		{"$sort": bson.M{"count": -1}},
+	}
 
 	works := aggregate(ctx, col, pipeline)
 
 	log.Info(works)
-
 }
 
-func aggregate(ctx context.Context, col *mongo.Collection, pipeline []bson.M) []domain.Work {
-	var result = make([]domain.Work, 0)
+type AggResult struct {
+	ID    string `bson:"_id"`
+	Count int    `bson:count`
+}
+
+func aggregate(ctx context.Context, col *mongo.Collection, pipeline []bson.M) []AggResult {
+	var result = make([]AggResult, 0)
 	cursor, err := col.Aggregate(ctx, pipeline)
 	if err != nil {
 		panic(err)
 	}
 	for cursor.Next(ctx) {
-		var res domain.Work
+		var res AggResult
 		decodeErr := cursor.Decode(&res)
 		if decodeErr != nil {
 			panic(decodeErr)
